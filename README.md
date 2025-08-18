@@ -30,17 +30,22 @@ This project allows **Admins** to manage students, mark attendance, and view rep
   - Sorting (Insertion Sort for student records)  
   - Modular Programming  
 
----
+## How to Run
 
-## Project Structure
+### 1. Compile the Code
 ```bash
-.
-├── main.cpp # Main source code (menus, logic)
-├── AdminAccount.txt # Stores admin credentials
-├── studentlist.txt # List of enrolled students
-├── UsnFile.txt # Stores sorted student IDs
-├── <username>.txt # Individual student attendance files
+g++ main.cpp -o attendance
 ```
+### 2. Run the executable
+```bash
+./OOPS
+```
+### 3. Login with credentials
+```bash
+Username: admin
+Password: admin
+```
+---
 
 ## How It Works
 - User logs in with default credentials
