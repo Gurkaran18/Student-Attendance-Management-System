@@ -1,29 +1,32 @@
 #ifndef ADMIN_H
 #define ADMIN_H
 
+#include "Student.h"
 #include "User.h"
 
 #include <string>
 
+// An administrator: authenticates against AdminAccount.txt and owns the
+// administrative operations of the system.
 class Admin : public User {
 public:
-    Admin(std::string username, std::string password);
-
+    bool login() override;
     void showMenu() override;
-    std::string role() const override { return "Admin"; }
-
-    static void createDefaultAccount(); // writes admin/admin if AdminAccount.txt is missing
-    static bool authenticate(const std::string& username, const std::string& password);
-    static bool isValidPassword(const std::string& password); // prints which rule failed
 
 private:
-    std::string password;
+    void enrollStudent();
+    void createAdminAccount();
+    void markAttendance();
+    void viewAttendanceList();
+    void batchSensorImport();
 
-    void saveAccount() const;
-    void createAdminAccount() const;
-    void enrollStudent() const;
-    void markAttendance() const;
-    void showAttendanceList() const;
+    // Seeds AdminAccount.txt with the default account on first run.
+    void initializeAccountStore() const;
+
+    // Loads the stored credentials for `username` and checks the password.
+    bool authenticate(const std::string& username, const std::string& password);
+
+    StudentRoster roster_;
 };
 
 #endif

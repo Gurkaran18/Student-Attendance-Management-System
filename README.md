@@ -1,84 +1,59 @@
-# Student Attendance Management System (C++ OOP)
+# Student Attendance Management System
 
-A menu-driven console attendance system built using **Object-Oriented Programming in C++17**.  
-**Admins** enroll students, create admin accounts, and mark attendance, while **Students** log in to view their attendance history and percentage.
+A menu-driven C++17 attendance system with Admin and Student roles, file-based
+persistence, and no third-party dependencies.
 
----
+## Build
 
-## Features
-
-### Admin
-- Admin login with username and password
-- Add (enroll) new students, with duplicate enrollments blocked
-- Create new admin accounts, with password rules enforced:
-  8 to 20 characters, at least one uppercase letter, one digit, and one special character (`@ # $ ^ & * ( ) _ . ,`)
-- Mark attendance (present/absent for each student, stamped with today's date)
-- View the attendance list for all students, in roll-number order
-
-### Student
-- Student login with username
-- Check attendance history (present/absent per date)
-- View attendance percentage
-
----
-
-## Tech Stack
-- **Language:** C++17 (standard library only)
-- **Concepts Used:**
-  - Classes & Objects, Encapsulation (private data, public methods)
-  - Inheritance & Polymorphism (abstract `User` base class, `Admin` and `Student` override `showMenu()`)
-  - Smart pointers (`std::unique_ptr<User>`)
-  - File Handling with `fstream` (accounts and per-student attendance logs)
-  - Data Validation (password rules, duplicate student check, menu input)
-  - Sorting (recursive insertion sort over a `std::vector` keeps the roll-number index sorted)
-  - Modular Programming (headers and source files, Makefile)
-
-## Project Structure
-| File | Purpose |
-|------|---------|
-| `User.h` | Abstract base class for anyone who can log in |
-| `Admin.h` / `Admin.cpp` | Admin login check, password rules, admin menu, enrolling students, marking attendance |
-| `Student.h` / `Student.cpp` | Student records, attendance history and percentage |
-| `Utils.h` / `Utils.cpp` | Safe console input, file helpers, recursive insertion sort, today's date |
-| `main.cpp` | Main menu and login flow |
-| `Makefile` | Build script |
-
-## How to Run
-
-### 1. Compile the code
-```bash
-g++ -std=c++17 -Wall -Wextra -o attendance main.cpp Admin.cpp Student.cpp Utils.cpp
 ```
-or simply:
-```bash
 make
 ```
-### 2. Run the executable
-```bash
-./attendance
-```
-### 3. Log in with the default admin credentials
-```
-Username: admin
-Password: admin
-```
-The default account is created automatically on first run. Use it to create your own admin accounts.
 
----
+Or directly:
 
-## Data Files
-All data is stored as tab-separated text files in the directory the program runs from:
+```
+g++ -std=c++17 -Wall -Wextra -pedantic -o main \
+    main.cpp AttendanceSystem.cpp Admin.cpp Student.cpp User.cpp Util.cpp
+```
+
+Run with `./main`. Clean with `make clean`.
+
+> **macOS note.** Some Command Line Tools installs ship a stale, partial
+> `/Library/Developer/CommandLineTools/usr/include/c++/v1` that shadows the
+> complete libc++ inside the SDK, making every `#include <string>` fail. The
+> Makefile detects this case and falls back to the SDK's libc++
+> (`-nostdinc++ -isystem "$(xcrun --show-sdk-path)/usr/include/c++/v1"`).
+> The durable fix is to reinstall the tools:
+> `sudo rm -rf /Library/Developer/CommandLineTools && xcode-select --install`.
+
+## Design
 
 | File | Contents |
-|------|----------|
-| `AdminAccount.txt` | `username  password` for each admin |
-| `studentlist.txt` | `username  name` for each enrolled student |
-| `UsnFile.txt` | Sorted list of student usernames (roll-number index) |
-| `<username>.txt` | One line per entry: `username  name  status  day  month  year` (status: `2` = enrolled, `1` = present, `0` = absent) |
+| --- | --- |
+| `User.h/.cpp` | Abstract base. Private identifier and password hash, `verifyPassword()`, shared password policy, pure virtual `login()` / `showMenu()`, virtual destructor. |
+| `Admin.h/.cpp` | `Admin : public User`. Enrollment, admin account creation, attendance marking, attendance list, batch sensor import. Owns `AdminAccount.txt`. |
+| `Student.h/.cpp` | `Student : public User` holding its USN, name and attendance records; owns `<USN>.txt`. Also `StudentRoster` (owns `studentlist.txt` and `UsnFile.txt`) and `recursiveInsertionSort`. |
+| `AttendanceSystem.h/.cpp` | Thin controller: top-level menu, constructs the right `User` subclass and drives it through a `User&`. |
+| `Util.h/.cpp` | Validated console input, `Date`, file-existence check. |
 
-## How It Works
-- The admin logs in (default credentials above) and picks an option from the menu
-- Enrolling a student creates their attendance log and adds them to the student list and roll-number index
-- Marking attendance appends a dated present/absent entry to each student's log
-- The attendance list and student view calculate the percentage from the log (0% when nothing is recorded yet)
-- A student logs in with their username to see their date-wise history and percentage
+Each class reads and writes only the files it owns. There are no public data
+members.
+
+## Data files
+
+On-disk formats are unchanged and backward compatible.
+
+| File | Format |
+| --- | --- |
+| `AdminAccount.txt` | `username<TAB>passwordHash` |
+| `studentlist.txt` | `USN<TAB>name` |
+| `UsnFile.txt` | One USN per line, kept sorted |
+| `<USN>.txt` | `USN<TAB>name<TAB>status<TAB>day<TAB>month<TAB>year`; the first row is the enrollment marker (status `2`) and is not counted toward attendance; `1` = present, `0` = absent |
+| `rfid_sensor_logs.txt` | `USN name status day month year`, one record per line |
+| `error_log.txt` | Appended rejection reasons, with source line numbers |
+
+## Password rules
+
+8 to 20 characters, with at least one uppercase letter, one digit, and one
+special character from ``@ & _ * ( ) # $ ^ . ,``. Passwords are stored as a
+`std::hash<std::string>` digest, never in plaintext.

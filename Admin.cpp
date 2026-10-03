@@ -1,157 +1,240 @@
 #include "Admin.h"
 
-#include "Student.h"
-#include "Utils.h"
+#include "Util.h"
 
-#include <cctype>
-#include <cstdlib>
 #include <fstream>
 #include <iostream>
-#include <utility>
+#include <sstream>
+#include <string>
 
-Admin::Admin(std::string username, std::string password) : User(std::move(username)), password(std::move(password)) {}
+namespace {
 
-void Admin::createDefaultAccount() {
-    if (!fileExists(ADMIN_FILE)) {
-        Admin("admin", "admin").saveAccount();
+const char* const kAdminFile = "AdminAccount.txt";
+const char* const kSensorFile = "rfid_sensor_logs.txt";
+const char* const kErrorLogFile = "error_log.txt";
+
+} // namespace
+
+void Admin::initializeAccountStore() const {
+    if (util::fileExists(kAdminFile)) {
+        return;
     }
+
+    std::ofstream file(kAdminFile);
+    if (!file.is_open()) {
+        std::cerr << "\n\t\t[Error] Failed to initialize Admin database.\n";
+        return;
+    }
+    file << "admin\t" << hashPassword("admin") << "\n";
 }
 
 bool Admin::authenticate(const std::string& username, const std::string& password) {
-    std::ifstream f(ADMIN_FILE);
-    std::string fileUsername, filePassword;
-    while (f >> fileUsername >> filePassword) {
-        if (fileUsername == username && filePassword == password) {
+    std::ifstream file(kAdminFile);
+    if (!file.is_open()) {
+        std::cerr << "\n\t\t[Error] Unable to access Admin database.\n";
+        return false;
+    }
+
+    std::string storedUsername;
+    std::size_t storedHash = 0;
+
+    while (file >> storedUsername >> storedHash) {
+        if (storedUsername != username) {
+            continue;
+        }
+        // Adopt the stored credentials, then let the base class compare.
+        setCredentials(storedUsername, storedHash);
+        if (verifyPassword(password)) {
             return true;
         }
     }
     return false;
 }
 
-// Rules: length 8-20, at least one uppercase letter, one digit, one special character.
-bool Admin::isValidPassword(const std::string& password) {
-    if (password.size() < 8) {
-        std::cout << "\n\t\t\tPassword is too short (minimum 8 characters)\n";
-        return false;
-    }
-    if (password.size() > 20) {
-        std::cout << "\n\t\t\tPassword is too long (maximum 20 characters)\n";
-        return false;
-    }
+bool Admin::login() {
+    initializeAccountStore();
+    std::cout << "\n\n------------------------ ADMIN LOGIN ------------------------\n";
 
-    const std::string specialChars = "@&_*()#$^.,";
-    bool hasUpper = false, hasDigit = false, hasSpecial = false;
-    for (char c : password) {
-        // cast to unsigned char: passing a negative char to isupper/isdigit is undefined
-        if (std::isupper(static_cast<unsigned char>(c))) hasUpper = true;
-        if (std::isdigit(static_cast<unsigned char>(c))) hasDigit = true;
-        if (specialChars.find(c) != std::string::npos) hasSpecial = true;
+    const std::string username = util::readWord("\n\t\t\tEnter username: ");
+    const std::string password = util::readWord("\n\t\t\tEnter password: ");
+
+    if (authenticate(username, password)) {
+        std::cout << "\n\t\t\tLogin successful!!!\n";
+        return true;
     }
 
-    if (!hasUpper) std::cout << "\n\t\t\tPassword needs at least one uppercase letter\n";
-    if (!hasDigit) std::cout << "\n\t\t\tPassword needs at least one digit\n";
-    if (!hasSpecial) std::cout << "\n\t\t\tPassword needs at least one special character (@ # $ ^ & * ( ) _ . ,)\n";
-    return hasUpper && hasDigit && hasSpecial;
-}
-
-void Admin::saveAccount() const {
-    std::ofstream f(ADMIN_FILE, std::ios::app);
-    f << username << "\t" << password << "\n";
+    std::cout << "\n\t\tError! Invalid Credentials. Please Try Again\n";
+    return false;
 }
 
 void Admin::showMenu() {
     while (true) {
         std::cout << "\n ------------------------ ADMIN MENU ------------------------\n";
-        std::cout << "\n\t\t\t1.Mark attendance\n\t\t\t2.Add students\n\t\t\t3.Create new admin account"
-                     "\n\t\t\t4.Student attendance list\n\t\t\t5.Main menu\n\t\t\t0.Exit\n";
-        switch (readInt("\n\t\t\tEnter your choice...")) {
-        case 0:
-            std::exit(0); // all files are closed at this point, so exiting directly is safe
-        case 1:
-            markAttendance();
-            break;
-        case 2:
-            enrollStudent();
-            break;
-        case 3:
-            createAdminAccount();
-            break;
-        case 4:
-            showAttendanceList();
-            break;
-        case 5:
-            return; // back to the main menu loop in main()
-        default:
-            std::cout << "\n\t\t\tInvalid choice. Please try again.\n";
+        std::cout << "\n\t\t\t1.Mark attendance"
+                  << "\n\t\t\t2.Add students"
+                  << "\n\t\t\t3.Create new admin account"
+                  << "\n\t\t\t4.Student attendance list"
+                  << "\n\t\t\t5.Batch Sensor Import"
+                  << "\n\t\t\t6.Main menu"
+                  << "\n\t\t\t0.Exit\n";
+
+        const int choice = util::readInt("\n\t\t\tEnter your choice... ");
+
+        switch (choice) {
+            case 0: requestQuit(); return;
+            case 1: markAttendance(); break;
+            case 2: enrollStudent(); break;
+            case 3: createAdminAccount(); break;
+            case 4: viewAttendanceList(); break;
+            case 5: batchSensorImport(); break;
+            case 6: return;
+            default: std::cout << "\n\t\tInvalid Choice!\n";
         }
     }
 }
 
-void Admin::createAdminAccount() const {
-    std::string newUsername = readWord("\n\t\t\tEnter username: ");
-    std::string newPassword;
-    // Keep asking until the password follows the rules and is re-entered identically
+void Admin::createAdminAccount() {
+    const std::string username = util::readWord("\n\t\t\tEnter username: ");
+
+    std::string password;
     while (true) {
-        newPassword = readWord("\n\t\t\tEnter password: ");
-        if (!isValidPassword(newPassword)) {
+        password = util::readWord("\n\t\t\tEnter password: ");
+        if (!isPasswordAcceptable(password)) {
             continue;
         }
-        std::string confirmPassword = readWord("\n\t\t\tRe-enter password: ");
-        if (newPassword == confirmPassword) {
+        const std::string repeated = util::readWord("\n\t\t\tRe-enter password: ");
+        if (password == repeated) {
             break;
         }
-        std::cout << "\n\t\tPasswords are not matching. Re-enter the password\n";
+        std::cout << "\n\t\tPasswords do not match. Please try again.\n";
     }
 
-    Admin(newUsername, newPassword).saveAccount();
+    std::ofstream file(kAdminFile, std::ios::app);
+    if (!file.is_open()) {
+        std::cerr << "\n\t\t[Error] Failed to securely write to Admin database.\n";
+        return;
+    }
+
+    file << username << "\t" << hashPassword(password) << "\n";
     std::cout << "\n\t\t\tAccount created successfully\n";
 }
 
-void Admin::enrollStudent() const {
-    std::string name = readWord("\n\t\t\tEnter the name: ");
-    std::string usn = readWord("\n\t\t\tEnter the username: ");
+void Admin::enrollStudent() {
+    const std::string name = util::readWord("\n\t\t\tEnter the name: ");
+    const std::string usn = util::readWord("\n\t\t\tEnter the username: ");
 
     Student student(usn, name);
-    if (!student.enroll()) {
+
+    if (util::fileExists(usn + ".txt")) {
         std::cout << "\n\t\t\tStudent already enrolled\n";
         return;
     }
-    sortUsnFile();
-    std::cout << "\n\t\tStudent successfully added to the list\n";
-}
 
-void Admin::markAttendance() const {
-    std::ifstream list(STUDENT_LIST_FILE);
-    if (!list) {
-        std::cout << "\n\t\t\tNo students enrolled yet\n";
+    if (!student.createRecordFile(util::today())) {
+        std::cerr << "\n\t\t[Error] Failed to initialize student record files properly.\n";
         return;
     }
 
-    Date date = today();
-    std::cout << "\n\t\t\tEnter 1 for present and 0 for absent\n\n";
-    std::string usn, name;
-    while (list >> usn >> name) {
-        int status = readInt("\t\tUniversity Number: " + usn + "\tName: " + name + "\t");
-        while (status != Student::ABSENT && status != Student::PRESENT) {
-            status = readInt("\t\tPlease enter 1 (present) or 0 (absent): ");
-        }
-        Student(usn, name).recordAttendance(status, date);
+    if (roster_.add(usn, name)) {
+        std::cout << "\n\t\tStudent successfully added to the list\n";
     }
+}
+
+void Admin::markAttendance() {
+    const util::Date date = util::today();
+    std::cout << "\n\t\t\tEnter 1 for present and 0 for absent\n\n";
+
+    const auto students = roster_.all();
+    for (const auto& entry : students) {
+        Student student(entry.first, entry.second);
+
+        std::cout << "\t\tUniversity Number: " << entry.first
+                  << "\tName: " << entry.second << "\t";
+
+        int status = util::readInt("");
+        while (status != 0 && status != 1) {
+            std::cout << "\t\t[Error] Input 1 for Present, 0 for Absent: ";
+            status = util::readInt("");
+        }
+
+        if (!student.appendAttendance(status, date)) {
+            std::cerr << "\n\t\t[Error] Failed to open database segment for "
+                      << entry.first << "\n";
+        }
+    }
+
     std::cout << "\n\t\t\tAll attendance marked\n";
 }
 
-void Admin::showAttendanceList() const {
-    std::ifstream index(USN_FILE);
-    if (!index) {
-        std::cout << "\n\t\t\tNo students enrolled yet\n";
+void Admin::viewAttendanceList() {
+    for (const std::string& usn : roster_.sortedUsns()) {
+        Student student(usn, "");
+        if (!student.loadRecords()) {
+            std::cerr << "\n\t\t[Error] Cannot read log for " << usn << "\n";
+            continue;
+        }
+        student.printSummary();
+    }
+}
+
+void Admin::batchSensorImport() {
+    std::ifstream sensorFile(kSensorFile);
+    if (!sensorFile.is_open()) {
+        std::cerr << "\n\t\t[Error] Unable to locate or open '" << kSensorFile << "'.\n";
         return;
     }
 
-    // UsnFile.txt is kept sorted, so the list comes out in roll-number order
-    std::string usn, name;
-    while (index >> usn) {
-        if (Student::find(usn, name)) {
-            Student(usn, name).printSummary();
+    std::ofstream errorLog(kErrorLogFile, std::ios::app);
+    if (!errorLog.is_open()) {
+        std::cerr << "\n\t\t[Error] Unable to open 'error_log.txt'. "
+                     "Continuing without logging errors...\n";
+    }
+
+    std::string line;
+    int lineNum = 0;
+    int successCount = 0;
+
+    while (std::getline(sensorFile, line)) {
+        lineNum++;
+        if (line.empty()) continue;
+
+        std::istringstream parser(line);
+        std::string usn;
+        std::string name;
+        int status = -1;
+        util::Date date;
+        date.day = -1;
+        date.month = -1;
+        date.year = -1;
+
+        if (!(parser >> usn >> name >> status >> date.day >> date.month >> date.year)) {
+            if (errorLog.is_open()) {
+                errorLog << "Line " << lineNum
+                         << ": Skipping due to missing or malformed fields => "
+                         << line << "\n";
+            }
+            continue;
+        }
+
+        if (status < 0 || status > 1 || date.day < 1 || date.day > 31 ||
+            date.month < 1 || date.month > 12 || date.year < 2000) {
+            if (errorLog.is_open()) {
+                errorLog << "Line " << lineNum
+                         << ": Impossible sensor date/value => " << line << "\n";
+            }
+            continue;
+        }
+
+        Student student(usn, name);
+        if (student.appendAttendance(status, date)) {
+            successCount++;
+        } else if (errorLog.is_open()) {
+            errorLog << "Line " << lineNum
+                     << ": Failed to write to student DB for USN " << usn << "\n";
         }
     }
+
+    std::cout << "\n\t\tBatch Sensor Import completed. Successfully processed "
+              << successCount << " valid logs.\n";
+    std::cout << "\t\tCheck 'error_log.txt' for any invalid sensor lines skipped.\n";
 }

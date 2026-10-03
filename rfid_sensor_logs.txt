@@ -1,0 +1,14 @@
+# valid line 
+UID100 John_Doe 1 15 4 2026
+
+# invalid missing fields
+UID101 Jane_Doe 
+
+# invalid pa
+UID102 Some_Guy 5 15 4 2026
+
+# invalid date
+UID103 What_Guy 1 50 4 2026
+
+# valid line
+UID104 Hello_World 0 15 4 2026
